@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pysigqc-metrics"
+version = "0.1.0"
+description = "Isolated radar-metrics pipeline extracted from pysigQC"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "pandas>=2.0",
+    "scikit-learn>=1.2",
+]
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.7"]
+all = ["pysigqc-metrics[plot]"]
+dev = [
+    "pysigqc-metrics[all]",
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["pysigqc_metrics*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
