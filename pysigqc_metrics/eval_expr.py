@@ -11,8 +11,6 @@ import time
 import numpy as np
 import pandas as pd
 
-from .utils import gene_intersection
-
 
 def compute_expr(
     gene_sigs_list: dict[str, list[str]],
@@ -31,71 +29,69 @@ def compute_expr(
         elapsed_seconds: wall-clock time
     """
     _t0 = time.perf_counter()
-    radar_values: dict = {}
-    na_proportions: dict = {}
-    expr_proportions: dict = {}
+    radar_values: dict = {sig: {} for sig in names_sigs}
+    na_proportions: dict = {sig: {} for sig in names_sigs}
+    expr_proportions: dict = {sig: {} for sig in names_sigs}
 
-    # --- NA proportion analysis ---
-    for sig in names_sigs:
-        gene_sig = gene_sigs_list[sig]
-        radar_values[sig] = {}
-        na_proportions[sig] = {}
-        expr_proportions[sig] = {}
-
-        for ds in names_datasets:
-            data_matrix = mRNA_expr_matrix[ds]
-            inter = gene_intersection(gene_sig, data_matrix)
-            genes_expr = data_matrix.loc[inter]
-            n_samples = genes_expr.shape[1]
-
-            # Proportion of NA per gene; signature genes missing from the
-            # dataset get NA proportion = 1.0 via reindex (avoids per-gene
-            # setitem reindexing). Sort descending to match R's -sort(-x).
-            gene_na_props = genes_expr.isna().sum(axis=1) / n_samples
-            gene_na_props = gene_na_props.reindex(gene_sig, fill_value=1.0)
-            gene_na_props = gene_na_props.sort_values(ascending=False)
-            na_proportions[sig][ds] = gene_na_props
-
-            # Radar metric: median proportion of non-NA values
-            radar_values[sig][ds] = {}
-            radar_values[sig][ds]["med_prop_na"] = float(np.median(1 - gene_na_props.values))
-
-    # --- Compute thresholds ---
-    if thresholds is None:
-        thresholds = {}
-        for ds in names_datasets:
-            # R: median(unlist(na.omit(matrix))) — na.omit drops entire rows with any NA
-            clean_df = mRNA_expr_matrix[ds].dropna(axis=0, how="any")
-            thresholds[ds] = float(np.median(clean_df.values.flatten()))
-    elif isinstance(thresholds, (list, np.ndarray)):
+    # Per-gene NA / above-threshold proportions depend only on the dataset.
+    # Compute them once per dataset against the whole expression matrix; the
+    # per-(signature, dataset) work below becomes a vectorized indexed gather.
+    if isinstance(thresholds, (list, np.ndarray)):
         thresholds = dict(zip(names_datasets, thresholds))
+    compute_thresholds = thresholds is None
+    if compute_thresholds:
+        thresholds = {}
 
-    # --- Expression proportion analysis ---
+    ds_cache: dict = {}
+    for ds in names_datasets:
+        df = mRNA_expr_matrix[ds]
+        arr = df.to_numpy(dtype=float)
+        n_samples = arr.shape[1]
+        nan_mask = np.isnan(arr)
+        has_na_full = nan_mask.any(axis=1)
+        na_props_full = nan_mask.sum(axis=1) / n_samples
+
+        # R: median(unlist(na.omit(matrix))) — na.omit drops rows with any NA.
+        if compute_thresholds:
+            clean = arr[~has_na_full]
+            thresh = float(np.median(clean)) if clean.size else float("nan")
+            thresholds[ds] = thresh
+        else:
+            thresh = float(thresholds[ds])
+
+        # NaN comparison is False in numpy; rows with any NaN get NaN propagated
+        # afterwards to match R's rowSums(genes_expr < threshold) semantics.
+        below_count = (arr < thresh).sum(axis=1)
+        expr_props_full = 1.0 - below_count / n_samples
+        expr_props_full = np.where(has_na_full, np.nan, expr_props_full)
+
+        ds_cache[ds] = (df.index, na_props_full, expr_props_full)
+
     for sig in names_sigs:
-        gene_sig = gene_sigs_list[sig]
-
+        gene_sig = list(gene_sigs_list[sig])
         for ds in names_datasets:
-            data_matrix = mRNA_expr_matrix[ds]
-            inter = gene_intersection(gene_sig, data_matrix)
-            genes_expr = data_matrix.loc[inter]
-            n_samples = genes_expr.shape[1]
-            thresh = thresholds[ds]
+            ds_index, na_props_full, expr_props_full = ds_cache[ds]
 
-            # Proportion of samples above threshold per gene
-            # R: rowSums(genes_expr < threshold) propagates NA — if any sample is NA,
-            # the entire gene gets NA. Then sort() removes NAs (na.last=NA default).
-            below_thresh = genes_expr < thresh  # NaN comparisons → False in pandas
-            has_na = genes_expr.isna().any(axis=1)
-            gene_expr_props = 1.0 - below_thresh.sum(axis=1) / n_samples
-            gene_expr_props[has_na] = np.nan  # match R's NA propagation
+            # Vectorized signature -> dataset row lookup; -1 marks missing genes.
+            idx = ds_index.get_indexer(gene_sig)
+            present = idx >= 0
+            present_idx = idx[present]
 
-            # Missing signature genes get proportion = 0.0 via reindex.
-            gene_expr_props = gene_expr_props.reindex(gene_sig, fill_value=0.0)
-            gene_expr_props = gene_expr_props.sort_values(ascending=True)
-            expr_proportions[sig][ds] = gene_expr_props
+            # Missing genes default to NA-prop = 1.0 and expr-prop = 0.0 (matches R).
+            na_vals = np.ones(len(gene_sig))
+            na_vals[present] = na_props_full[present_idx]
+            expr_vals = np.zeros(len(gene_sig))
+            expr_vals[present] = expr_props_full[present_idx]
 
-            # R's sort() removes NAs, then median is computed on non-NA values
-            radar_values[sig][ds]["med_prop_above_med"] = float(np.nanmedian(gene_expr_props.values))
+            # Radar metrics are order-independent; compute before sorting.
+            radar_values[sig][ds] = {
+                "med_prop_na": float(np.median(1.0 - na_vals)),
+                "med_prop_above_med": float(np.nanmedian(expr_vals)),
+            }
+
+            # Sorted Series for downstream display, matching R's sort order.
+            na_proportions[sig][ds] = pd.Series(na_vals, index=gene_sig).sort_values(ascending=False)
+            expr_proportions[sig][ds] = pd.Series(expr_vals, index=gene_sig).sort_values(ascending=True)
 
     return {
         "radar_values": radar_values,
