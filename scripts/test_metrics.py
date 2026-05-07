@@ -10,7 +10,8 @@ Example:
         --expr      tcga_RSEM_gene_tpm.gz \\
         --phenotype TCGA_phenotype_denseDataOnlyDownload.tsv \\
         --gmt       BUFFA_HYPOXIA_METAGENE.v2026.1.Hs.gmt \\
-        --sample-limit 100
+        --sample-limit 100 \\
+        --plot      ./radar_out
 """
 
 from __future__ import annotations
@@ -62,6 +63,9 @@ def parse_args() -> argparse.Namespace:
                         "(default: pysigQC-metrics/scripts/test_metrics_cache).")
     p.add_argument("--out-dir", type=Path, default=None,
                    help="If given, also write radarchart_table.txt under this directory.")
+    p.add_argument("--plot", type=Path, default=None, metavar="PATH",
+                   help="Render the radar chart as sig_radarplot.pdf under PATH "
+                        "(requires matplotlib; install via 'pip install pysigqc-metrics[plot]').")
     p.add_argument("--rebuild-data", action="store_true",
                    help="Force re-preprocessing of TCGA -> HGNC matrix.")
     p.add_argument("--verbose", action="store_true",
@@ -203,6 +207,17 @@ def main() -> int:
           f"(internal: {result['elapsed_seconds']:.4f}s)")
 
     print_radar(result, names_sigs, names_datasets)
+
+    if args.plot is not None:
+        try:
+            from pysigqc_metrics.plots import plot_radar
+        except ImportError as err:
+            sys.exit(f"[error] --plot requires matplotlib: {err}\n"
+                     f"        install via: pip install pysigqc-metrics[plot]")
+        args.plot.mkdir(parents=True, exist_ok=True)
+        pdf_path = plot_radar(result["radar_result"], names_sigs,
+                              names_datasets, args.plot)
+        print(f"\n[plot] wrote {pdf_path}")
     return 0
 
 
