@@ -17,8 +17,6 @@ import pandas as pd
 from scipy import stats as sp_stats
 from sklearn.decomposition import PCA
 
-from .utils import gene_intersection
-
 
 def compute_metrics(
     gene_sigs_list: dict[str, list[str]],
@@ -47,6 +45,18 @@ def compute_metrics(
     pca_results: dict = {}
     score_cor_mats: dict = {}
 
+    # Per-dataset cache: convert to NumPy once and replace non-finite with NaN.
+    ds_cache: dict = {}
+    for ds in names_datasets:
+        dm = mRNA_expr_matrix[ds]
+        arr = dm.to_numpy(dtype=float, copy=True)
+        np.putmask(arr, ~np.isfinite(arr), np.nan)
+        ds_cache[ds] = {
+            "arr": arr,
+            "index": dm.index,
+            "columns": list(dm.columns),
+        }
+
     for sig in names_sigs:
         gene_sig = gene_sigs_list[sig]
         radar_values[sig] = {}
@@ -54,81 +64,94 @@ def compute_metrics(
         pca_results[sig] = {}
 
         for ds in names_datasets:
-            data_matrix = mRNA_expr_matrix[ds].copy()
-            # Replace non-finite values with NaN
-            data_matrix = data_matrix.where(np.isfinite(data_matrix), other=np.nan)
-            inter = gene_intersection(gene_sig, data_matrix)
+            cache = ds_cache[ds]
+            arr = cache["arr"]
+            ds_index = cache["index"]
+            sample_names = cache["columns"]
 
-            sig_data = data_matrix.loc[inter]
+            # Resolve signature genes against the dataset index in one shot.
+            sig_idx = ds_index.get_indexer(gene_sig)
+            present_idx = sig_idx[sig_idx >= 0]
+            sig_arr = arr[present_idx] if present_idx.size else arr[:0]
 
             # --- Compute summary scores ---
-            sig_arr = sig_data.to_numpy(dtype=float)
-            med_scores = np.nanmedian(sig_arr, axis=0)
-            mean_scores = np.nanmean(sig_arr, axis=0)
-            sample_names = list(data_matrix.columns)
+            n_samples = arr.shape[1]
+            if sig_arr.shape[0] > 0:
+                med_scores = np.nanmedian(sig_arr, axis=0)
+                mean_scores = np.nanmean(sig_arr, axis=0)
+            else:
+                med_scores = np.full(n_samples, np.nan)
+                mean_scores = np.full(n_samples, np.nan)
 
             # PCA on signature genes (samples as observations, genes as features)
             pca1_scores = None
             props_of_variances = None
             pca_obj = None
-            try:
+            if sig_arr.shape[0] >= 2 and sig_arr.shape[1] >= 2:
                 # R: prcomp(t(na.omit(data.matrix[inter,])))
-                sig_clean = sig_data.dropna(axis=0, how="any").T  # samples x genes
-                if sig_clean.shape[1] >= 2 and sig_clean.shape[0] >= 2:
-                    pca_obj = PCA()
-                    pca_obj.fit(sig_clean.values)
-                    pca1_scores = pca_obj.transform(sig_clean.values)[:, 0]
-                    props_of_variances = pca_obj.explained_variance_ratio_
-            except (np.linalg.LinAlgError, ValueError) as e:
-                # Narrow to the exceptions R's prcomp equivalent can raise
-                # (singular matrix, missing values, degenerate input). Anything
-                # else propagates. Matches R_refactored/compare_metrics_loc.R:52.
-                warnings.warn(
-                    f"PCA failed for sig={sig!r} ds={ds!r}: {type(e).__name__}: {e}",
-                    RuntimeWarning, stacklevel=2,
-                )
-                pca1_scores = None
-                pca_obj = None
+                row_clean = ~np.isnan(sig_arr).any(axis=1)
+                sig_clean = sig_arr[row_clean].T  # samples x genes
+                if sig_clean.shape[0] >= 2 and sig_clean.shape[1] >= 2:
+                    try:
+                        pca_obj = PCA()
+                        pca1_scores = pca_obj.fit_transform(sig_clean)[:, 0]
+                        props_of_variances = pca_obj.explained_variance_ratio_
+                    except (np.linalg.LinAlgError, ValueError) as e:
+                        # Narrow to the exceptions R's prcomp equivalent can raise
+                        # (singular matrix, missing values, degenerate input).
+                        warnings.warn(
+                            f"PCA failed for sig={sig!r} ds={ds!r}: {type(e).__name__}: {e}",
+                            RuntimeWarning, stacklevel=2,
+                        )
+                        pca1_scores = None
+                        pca_obj = None
 
             pca_results[sig][ds] = {
                 "pca_obj": pca_obj,
                 "props_of_variances": props_of_variances,
             }
 
-            # --- Compute correlations ---
+            # --- Compute correlations: single rankdata + corrcoef ---
             rho_mean_med = 0.0
             rho_mean_pca1 = 0.0
             rho_pca1_med = 0.0
 
-            if len(med_scores) > 1 and len(mean_scores) > 1:
-                rho_mean_med, _ = sp_stats.spearmanr(med_scores, mean_scores)
-
             if pca1_scores is not None and len(pca1_scores) > 1:
-                rho_mean_pca1, _ = sp_stats.spearmanr(mean_scores, pca1_scores)
-                rho_pca1_med, _ = sp_stats.spearmanr(pca1_scores, med_scores)
+                stacked = np.vstack([mean_scores, med_scores, pca1_scores])
+                col_mask = ~np.isnan(stacked).any(axis=0)
+                if col_mask.sum() > 1:
+                    ranks = sp_stats.rankdata(stacked[:, col_mask], axis=1)
+                    cor = np.corrcoef(ranks)
+                    rho_mean_med = float(cor[0, 1])
+                    rho_mean_pca1 = float(cor[0, 2])
+                    rho_pca1_med = float(cor[2, 1])
+                    score_cor_mats[f"{ds}_{sig}"] = pd.DataFrame(
+                        cor, index=["Mean", "Median", "PCA1"],
+                        columns=["Mean", "Median", "PCA1"],
+                    )
+            elif n_samples > 1:
+                stacked = np.vstack([mean_scores, med_scores])
+                col_mask = ~np.isnan(stacked).any(axis=0)
+                if col_mask.sum() > 1:
+                    ranks = sp_stats.rankdata(stacked[:, col_mask], axis=1)
+                    cor = np.corrcoef(ranks)
+                    rho_mean_med = float(cor[0, 1])
+                    score_cor_mats[f"{ds}_{sig}"] = pd.DataFrame(
+                        cor, index=["Mean", "Median"],
+                        columns=["Mean", "Median"],
+                    )
 
             prop_pca1_var = 0.0
             if props_of_variances is not None and len(props_of_variances) > 0:
                 prop_pca1_var = float(props_of_variances[0])
 
             radar_values[sig][ds] = {
-                "rho_mean_med": float(rho_mean_med),
-                "rho_pca1_med": float(rho_pca1_med),
-                "rho_mean_pca1": float(rho_mean_pca1),
+                "rho_mean_med": rho_mean_med,
+                "rho_pca1_med": rho_pca1_med,
+                "rho_mean_pca1": rho_mean_pca1,
                 "prop_pca1_var": prop_pca1_var,
             }
 
-            # --- Build scoring correlation matrix ---
-            score_cols = {"Mean": mean_scores, "Median": med_scores}
-            if pca1_scores is not None:
-                score_cols["PCA1"] = pca1_scores
-
-            if len(score_cols) >= 2:
-                score_df = pd.DataFrame(score_cols)
-                cor_mat = score_df.corr(method="spearman")
-                score_cor_mats[f"{ds}_{sig}"] = cor_mat
-
-            # --- Store scores ---
             scores_all[sig][ds] = {
                 "med_scores": med_scores,
                 "mean_scores": mean_scores,
