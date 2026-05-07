@@ -104,6 +104,29 @@ radar = compute_radar(radar_values, list(sigs), list(expr))
   log-transformed before use.
 - Minimum 2 genes per signature, 2 samples per dataset.
 
+## CLI — running on TCGA inputs
+
+`scripts/test_metrics.py` is a standalone CLI that runs the full pipeline on a
+TCGA-style dataset (Ensembl expression matrix + phenotype TSV + MSigDB GMT) and
+prints the radar table. No R dependency.
+
+```bash
+python scripts/test_metrics.py \
+    --expr      tcga_RSEM_gene_tpm.gz \
+    --phenotype TCGA_phenotype_denseDataOnlyDownload.tsv \
+    --gmt       BUFFA_HYPOXIA_METAGENE.v2026.1.Hs.gmt \
+    --sample-limit 100 \
+    --plot      ./radar_out          # optional: writes sig_radarplot.pdf
+```
+
+By default every run re-processes the input files from scratch. Pass
+`--cache-dir PATH` to persist the preprocessed HGNC matrix between runs and
+skip the slow Ensembl→HGNC mapping step on subsequent calls.
+
+```
+python scripts/test_metrics.py --help
+```
+
 ## Tests
 
 ```bash
