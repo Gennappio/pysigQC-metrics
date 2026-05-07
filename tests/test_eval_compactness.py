@@ -9,7 +9,7 @@ from pysigqc_metrics.eval_compactness import compute_compactness
 
 def test_structure(signatures, datasets, names_sigs, names_datasets):
     result = compute_compactness(signatures, names_sigs, datasets, names_datasets)
-    assert set(result.keys()) == {"radar_values", "autocor_matrices", "rank_product_tables", "elapsed_seconds"}
+    assert set(result.keys()) == {"radar_values", "autocor_matrices", "elapsed_seconds"}
 
 
 def test_autocor_median_present(signatures, datasets, names_sigs, names_datasets):
