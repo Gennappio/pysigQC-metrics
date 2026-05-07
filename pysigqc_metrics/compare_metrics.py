@@ -62,8 +62,9 @@ def compute_metrics(
             sig_data = data_matrix.loc[inter]
 
             # --- Compute summary scores ---
-            med_scores = sig_data.apply(lambda col: np.nanmedian(col.values), axis=0).values
-            mean_scores = sig_data.apply(lambda col: np.nanmean(col.values), axis=0).values
+            sig_arr = sig_data.to_numpy(dtype=float)
+            med_scores = np.nanmedian(sig_arr, axis=0)
+            mean_scores = np.nanmean(sig_arr, axis=0)
             sample_names = list(data_matrix.columns)
 
             # PCA on signature genes (samples as observations, genes as features)

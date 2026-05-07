@@ -39,6 +39,16 @@ def compute_var(
     all_mean: dict = {}
     inter_genes: dict = {}
 
+    # Per-gene SD/mean depend only on the dataset, not on the signature.
+    # Compute once per dataset and reuse across all signatures (ddof=1 to match R's sd()).
+    ds_stats: dict = {}
+    for ds in names_datasets:
+        data_matrix = mRNA_expr_matrix[ds]
+        arr = data_matrix.to_numpy(dtype=float)
+        sd_genes = pd.Series(np.nanstd(arr, axis=1, ddof=1), index=data_matrix.index)
+        mean_genes = pd.Series(np.nanmean(arr, axis=1), index=data_matrix.index)
+        ds_stats[ds] = (sd_genes, mean_genes)
+
     for sig in names_sigs:
         gene_sig = gene_sigs_list[sig]
         radar_values[sig] = {}
@@ -52,10 +62,7 @@ def compute_var(
             inter = gene_intersection(gene_sig, data_matrix)
             inter_genes[sig][ds] = inter
 
-            # Per-gene SD and mean across all samples (ddof=1 to match R's sd())
-            sd_genes = data_matrix.apply(lambda row: np.nanstd(row.values.astype(float), ddof=1), axis=1)
-            mean_genes = data_matrix.apply(lambda row: np.nanmean(row.values.astype(float)), axis=1)
-
+            sd_genes, mean_genes = ds_stats[ds]
             all_sd[sig][ds] = sd_genes
             all_mean[sig][ds] = mean_genes
 

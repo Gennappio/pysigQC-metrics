@@ -160,15 +160,14 @@ def compute_compactness(
             genes_present = list(sig_df.index)
             sig_data = sig_df.values.astype(float)
 
-            # Spearman correlation between genes (rows)
+            # Spearman correlation between genes (rows): rank along samples,
+            # then Pearson via np.corrcoef. Constant rows produce NaN entries,
+            # matching scipy.stats.spearmanr; force diagonal = 1.0 for symmetry.
             n_genes = sig_data.shape[0]
             if n_genes > 1:
-                autocors = np.eye(n_genes)
-                for gi in range(n_genes):
-                    for gj in range(gi + 1, n_genes):
-                        rho, _ = sp_stats.spearmanr(sig_data[gi], sig_data[gj])
-                        autocors[gi, gj] = rho
-                        autocors[gj, gi] = rho
+                ranked = sp_stats.rankdata(sig_data, axis=1)
+                autocors = np.corrcoef(ranked)
+                np.fill_diagonal(autocors, 1.0)
             else:
                 autocors = np.array([[1.0]])
 
