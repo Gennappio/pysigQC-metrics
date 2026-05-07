@@ -34,14 +34,16 @@ def parse_gmt_signatures(path: Path) -> dict[str, list[str]]:
     return signatures
 
 
-def _read_mygene_cache(cache_path: Path) -> dict[str, str]:
+def _read_mygene_cache(cache_path: Path | None) -> dict[str, str]:
     """Load a previously written ensembl-id -> hgnc-symbol map from disk.
 
     Lines may be ``ENSGxxxxxx<TAB>SYMBOL`` (mapped) or just ``ENSGxxxxxx``
-    (queried, no HGNC symbol — recorded so we don't re-query it).
+    (queried, no HGNC symbol — recorded so we don't re-query it). When
+    ``cache_path`` is ``None`` or the file is missing, an empty map is
+    returned and no disk I/O is performed.
     """
     cache: dict[str, str] = {}
-    if not cache_path.exists():
+    if cache_path is None or not cache_path.exists():
         return cache
     for ln in cache_path.read_text().splitlines():
         if "\t" in ln:
@@ -55,7 +57,9 @@ def _read_mygene_cache(cache_path: Path) -> dict[str, str]:
     return cache
 
 
-def _write_mygene_cache(cache: dict[str, str], cache_path: Path) -> None:
+def _write_mygene_cache(cache: dict[str, str], cache_path: Path | None) -> None:
+    if cache_path is None:
+        return
     cache_path.write_text(
         "\n".join(f"{e}\t{s}" if s else e
                   for e, s in sorted(cache.items())) + "\n"
@@ -63,10 +67,15 @@ def _write_mygene_cache(cache: dict[str, str], cache_path: Path) -> None:
 
 
 def query_mygene_ensembl_to_symbol(ensembl_ids: list[str],
-                                   cache_path: Path,
+                                   cache_path: Path | None,
                                    batch_size: int = 500,
                                    timeout: float = 30.0) -> dict[str, str]:
-    """Map Ensembl gene IDs to HGNC symbols via mygene.info, caching to disk."""
+    """Map Ensembl gene IDs to HGNC symbols via mygene.info.
+
+    If ``cache_path`` is provided, partial results are read/written to that
+    file so subsequent runs skip already-mapped IDs. If ``None``, the
+    mapping happens entirely in memory and is discarded at process exit.
+    """
     cache = _read_mygene_cache(cache_path)
     missing = [eid for eid in ensembl_ids if eid not in cache]
     if not missing:
@@ -109,11 +118,12 @@ def query_mygene_ensembl_to_symbol(ensembl_ids: list[str],
 
 
 def convert_ensembl_matrix_to_hgnc(expr: pd.DataFrame,
-                                   cache_path: Path) -> pd.DataFrame:
+                                   cache_path: Path | None) -> pd.DataFrame:
     """Convert an Ensembl-indexed expression matrix to HGNC-indexed.
 
     1. strip Ensembl version suffix (``ENSG...123.7`` -> ``ENSG...123``)
-    2. query mygene.info for ``{ensembl_id: hgnc_symbol}``
+    2. query mygene.info for ``{ensembl_id: hgnc_symbol}`` (cache to
+       ``cache_path`` if provided, otherwise in-memory only)
     3. drop rows whose HGNC symbol is missing/empty
     4. rename remaining rows to the HGNC symbol
     5. drop duplicate HGNC symbols, keeping the first occurrence

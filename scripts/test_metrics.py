@@ -59,15 +59,19 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--signature", action="append", default=[],
                    help="Restrict to specific signature names from the GMT (repeatable).")
     p.add_argument("--cache-dir", type=Path, default=None,
-                   help="Working directory for preprocessed inputs "
-                        "(default: pysigQC-metrics/scripts/test_metrics_cache).")
+                   help="Opt-in: persist the preprocessed HGNC matrix and the "
+                        "Ensembl->HGNC mygene map under PATH so subsequent runs "
+                        "skip the slow mapping step. No cache is created or "
+                        "read when this flag is omitted.")
     p.add_argument("--out-dir", type=Path, default=None,
                    help="If given, also write radarchart_table.txt under this directory.")
     p.add_argument("--plot", type=Path, default=None, metavar="PATH",
                    help="Render the radar chart as sig_radarplot.pdf under PATH "
                         "(requires matplotlib; install via 'pip install pysigqc-metrics[plot]').")
     p.add_argument("--rebuild-data", action="store_true",
-                   help="Force re-preprocessing of TCGA -> HGNC matrix.")
+                   help="With --cache-dir: ignore any cached dataset.csv and "
+                        "redo Ensembl->HGNC mapping from scratch. Has no "
+                        "effect without --cache-dir.")
     p.add_argument("--verbose", action="store_true",
                    help="Print per-module pipeline progress.")
     return p.parse_args()
@@ -122,17 +126,22 @@ def load_signatures(gmt_path: Path, requested: list[str]) -> dict[str, list[str]
     return {s: sigs_all[s] for s in requested}
 
 
-def preprocess_inputs(args: argparse.Namespace, cache_dir: Path
+def preprocess_inputs(args: argparse.Namespace, cache_dir: Path | None
                       ) -> tuple[pd.DataFrame, dict[str, list[str]], str]:
-    """Build (HGNC matrix, gene_sigs_list, dataset_name) and persist to cache_dir."""
+    """Build (HGNC matrix, gene_sigs_list, dataset_name).
+
+    When ``cache_dir`` is provided, the HGNC matrix and the mygene map are
+    persisted there and reused on subsequent runs. When ``None``, every
+    run reprocesses the inputs from scratch in memory.
+    """
     dataset_name = args.dataset_name or derive_dataset_name(
         args.sample_type, args.cancer_type)
-    dataset_csv = cache_dir / "dataset.csv"
-    ens_cache = cache_dir / "ensembl_hgnc_map.tsv"
+    dataset_csv = (cache_dir / "dataset.csv") if cache_dir is not None else None
+    ens_cache = (cache_dir / "ensembl_hgnc_map.tsv") if cache_dir is not None else None
 
     gene_sigs_list = load_signatures(args.gmt, args.signature)
 
-    if dataset_csv.exists() and not args.rebuild_data:
+    if dataset_csv is not None and dataset_csv.exists() and not args.rebuild_data:
         print(f"[data] reuse cached HGNC matrix {dataset_csv} "
               f"(use --rebuild-data to redo)")
         expr_hgnc = pd.read_csv(dataset_csv, index_col=0)
@@ -146,11 +155,13 @@ def preprocess_inputs(args: argparse.Namespace, cache_dir: Path
         expr = subsample_columns(expr, args.sample_limit)
         if args.sample_limit > 0:
             print(f"[data] sample-limit={args.sample_limit} -> {expr.shape[1]} samples")
-        print(f"[data] mapping {expr.shape[0]} Ensembl IDs -> HGNC (cache={ens_cache})")
+        cache_desc = ens_cache if ens_cache is not None else "in-memory only"
+        print(f"[data] mapping {expr.shape[0]} Ensembl IDs -> HGNC (cache={cache_desc})")
         expr_hgnc = convert_ensembl_matrix_to_hgnc(expr, ens_cache)
-        expr_hgnc.to_csv(dataset_csv)
-        print(f"[data] wrote {dataset_csv}: "
-              f"{expr_hgnc.shape[0]} genes x {expr_hgnc.shape[1]} samples")
+        if dataset_csv is not None:
+            expr_hgnc.to_csv(dataset_csv)
+            print(f"[data] wrote {dataset_csv}: "
+                  f"{expr_hgnc.shape[0]} genes x {expr_hgnc.shape[1]} samples")
 
     overlap = {s: sum(g in expr_hgnc.index for g in gs)
                for s, gs in gene_sigs_list.items()}
@@ -187,9 +198,13 @@ def print_radar(result: dict, names_sigs: list[str], names_datasets: list[str]
 
 def main() -> int:
     args = parse_args()
-    cache_dir = args.cache_dir or (HERE / "test_metrics_cache")
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    print(f"[setup] cache_dir = {cache_dir}")
+    cache_dir = args.cache_dir
+    if cache_dir is not None:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        print(f"[setup] cache_dir = {cache_dir}")
+    else:
+        print("[setup] no --cache-dir set: preprocessing runs from scratch "
+              "(pass --cache-dir PATH to persist the HGNC matrix between runs)")
 
     expr_hgnc, gene_sigs_list, dataset_name = preprocess_inputs(args, cache_dir)
     expr_dict = {dataset_name: expr_hgnc}
