@@ -174,11 +174,13 @@ def compute_compactness(
             autocor_df = pd.DataFrame(autocors, index=genes_present, columns=genes_present)
             autocor_matrices[sig][ds] = autocor_df
 
-            # Compute median autocorrelation per gene (for RankProd)
+            # Median autocorrelation per gene (for RankProd): single vectorized
+            # nanmedian over rows instead of one call per gene.
+            row_medians = np.nanmedian(autocors, axis=1) if n_genes > 1 else np.array([1.0])
             for i, gene in enumerate(genes_present):
                 if gene not in gene_median_autocor[sig]:
                     gene_median_autocor[sig][gene] = {}
-                gene_median_autocor[sig][gene][ds] = float(np.nanmedian(autocors[i, :]))
+                gene_median_autocor[sig][gene][ds] = float(row_medians[i])
 
             if autocors.shape[0] > 1:
                 autocor_median = float(np.nanmedian(autocors))

@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats as sp_stats
 
-from .utils import gene_intersection, z_transform
+from .utils import gene_intersection
 
 
 def compute_stan(
@@ -45,16 +45,20 @@ def compute_stan(
             data_matrix = mRNA_expr_matrix[ds]
             inter = gene_intersection(gene_sig, data_matrix)
 
-            # Z-transform each gene (with zero-variance guard)
-            sig_data = data_matrix.loc[inter].copy().astype(float)
-            z_data = sig_data.copy()
-            for gene in inter:
-                gene_vals = sig_data.loc[gene].values
-                z_data.loc[gene] = z_transform(gene_vals)
+            # Z-transform each gene row in one vectorized pass (with
+            # zero-variance / all-NaN guard producing zeros, matching
+            # utils.z_transform applied per-row).
+            sig_data = data_matrix.loc[inter].astype(float)
+            arr = sig_data.to_numpy()
+            mu = np.nanmean(arr, axis=1, keepdims=True)
+            sd = np.nanstd(arr, axis=1, ddof=1, keepdims=True)
+            bad = (sd == 0) | np.isnan(sd)
+            sd_safe = np.where(bad, 1.0, sd)
+            z_arr = np.where(bad, 0.0, (arr - mu) / sd_safe)
 
             # Median across genes for each sample
-            z_transf_scores = z_data.apply(lambda col: np.nanmedian(col.values), axis=0).values
-            med_scores = sig_data.apply(lambda col: np.nanmedian(col.values), axis=0).values
+            z_transf_scores = np.nanmedian(z_arr, axis=0)
+            med_scores = np.nanmedian(arr, axis=0)
 
             # Spearman correlation between raw and z-transformed scores
             rho, _ = sp_stats.spearmanr(med_scores, z_transf_scores)

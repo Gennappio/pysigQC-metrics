@@ -48,15 +48,11 @@ def compute_expr(
             genes_expr = data_matrix.loc[inter]
             n_samples = genes_expr.shape[1]
 
-            # Proportion of NA per gene
+            # Proportion of NA per gene; signature genes missing from the
+            # dataset get NA proportion = 1.0 via reindex (avoids per-gene
+            # setitem reindexing). Sort descending to match R's -sort(-x).
             gene_na_props = genes_expr.isna().sum(axis=1) / n_samples
-
-            # Genes in signature but not in dataset get NA proportion = 1.0
-            missing_genes = [g for g in gene_sig if g not in data_matrix.index]
-            for g in missing_genes:
-                gene_na_props[g] = 1.0
-
-            # Sort descending (like R's -sort(-x))
+            gene_na_props = gene_na_props.reindex(gene_sig, fill_value=1.0)
             gene_na_props = gene_na_props.sort_values(ascending=False)
             na_proportions[sig][ds] = gene_na_props
 
@@ -93,11 +89,8 @@ def compute_expr(
             gene_expr_props = 1.0 - below_thresh.sum(axis=1) / n_samples
             gene_expr_props[has_na] = np.nan  # match R's NA propagation
 
-            # Missing genes get proportion = 0.0
-            missing_genes = [g for g in gene_sig if g not in data_matrix.index]
-            for g in missing_genes:
-                gene_expr_props[g] = 0.0
-
+            # Missing signature genes get proportion = 0.0 via reindex.
+            gene_expr_props = gene_expr_props.reindex(gene_sig, fill_value=0.0)
             gene_expr_props = gene_expr_props.sort_values(ascending=True)
             expr_proportions[sig][ds] = gene_expr_props
 
