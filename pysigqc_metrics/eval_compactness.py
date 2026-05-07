@@ -37,25 +37,29 @@ def compute_compactness(
     autocor_matrices: dict = {sig: {} for sig in names_sigs}
 
     # Per-dataset cache: drop rows with any NA once (matches R's na.omit on the
-    # full-row selection) and pre-rank along samples once. The per-(sig, ds)
-    # work below becomes a vectorized row gather + np.corrcoef on ranks.
+    # full-row selection). Ranking is done on-demand, only on the K signature
+    # rows, with a lazy per-gene cache so that genes shared across signatures
+    # are ranked at most once per dataset. This keeps memory at O(K * N) and
+    # work at O(unique_sig_genes * N log N) instead of O(G * N log N), which
+    # matters when G >> K (single-cell scale).
     ds_cache: dict = {}
     for ds in names_datasets:
         df = mRNA_expr_matrix[ds]
         arr = df.to_numpy(dtype=float)
         keep = ~np.isnan(arr).any(axis=1)
-        clean_arr = arr[keep]
-        clean_index = df.index[keep]
-        if clean_arr.shape[0] > 0:
-            clean_ranks = sp_stats.rankdata(clean_arr, axis=1)
-        else:
-            clean_ranks = clean_arr
-        ds_cache[ds] = (clean_index, clean_ranks)
+        ds_cache[ds] = {
+            "index": df.index[keep],
+            "arr": arr[keep],
+            "rank_cache": {},
+        }
 
     for sig in names_sigs:
         gene_sig = list(gene_sigs_list[sig])
         for ds in names_datasets:
-            clean_index, clean_ranks = ds_cache[ds]
+            cache = ds_cache[ds]
+            clean_index = cache["index"]
+            clean_arr = cache["arr"]
+            rank_cache = cache["rank_cache"]
 
             # Vectorized lookup of signature genes among non-NA dataset rows;
             # genes missing or carrying any NA in the dataset are dropped, as
@@ -65,7 +69,12 @@ def compute_compactness(
             n_genes = present_idx.size
 
             if n_genes > 1:
-                sig_ranks = clean_ranks[present_idx]
+                missing = [i for i in present_idx.tolist() if i not in rank_cache]
+                if missing:
+                    new_ranks = sp_stats.rankdata(clean_arr[missing], axis=1)
+                    for j, gi in enumerate(missing):
+                        rank_cache[gi] = new_ranks[j]
+                sig_ranks = np.stack([rank_cache[i] for i in present_idx])
                 autocors = np.corrcoef(sig_ranks)
                 np.fill_diagonal(autocors, 1.0)
                 autocor_median = float(np.nanmedian(autocors))
