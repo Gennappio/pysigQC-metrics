@@ -13,14 +13,13 @@ import numpy as np
 import pandas as pd
 from scipy import stats as sp_stats
 
-from .backends import as_backend
 from .utils import gene_intersection
 
 
 def compute_var(
     gene_sigs_list: dict[str, list[str]],
     names_sigs: list[str],
-    mRNA_expr_matrix: dict,
+    mRNA_expr_matrix: dict[str, pd.DataFrame],
     names_datasets: list[str],
 ) -> dict:
     """Compute variability metrics for each signature-dataset pair.
@@ -42,14 +41,12 @@ def compute_var(
 
     # Per-gene SD/mean depend only on the dataset, not on the signature.
     # Compute once per dataset and reuse across all signatures (ddof=1 to match R's sd()).
-    # The backend computes them without densifying sparse inputs.
     ds_stats: dict = {}
-    backends = {ds: as_backend(mRNA_expr_matrix[ds]) for ds in names_datasets}
     for ds in names_datasets:
-        backend = backends[ds]
-        mean, sd = backend.gene_mean_sd()
-        sd_genes = pd.Series(sd, index=backend.gene_names)
-        mean_genes = pd.Series(mean, index=backend.gene_names)
+        data_matrix = mRNA_expr_matrix[ds]
+        arr = data_matrix.to_numpy(dtype=float)
+        sd_genes = pd.Series(np.nanstd(arr, axis=1, ddof=1), index=data_matrix.index)
+        mean_genes = pd.Series(np.nanmean(arr, axis=1), index=data_matrix.index)
         ds_stats[ds] = (sd_genes, mean_genes)
 
     for sig in names_sigs:
@@ -61,7 +58,8 @@ def compute_var(
         inter_genes[sig] = {}
 
         for ds in names_datasets:
-            inter = gene_intersection(gene_sig, backends[ds])
+            data_matrix = mRNA_expr_matrix[ds]
+            inter = gene_intersection(gene_sig, data_matrix)
             inter_genes[sig][ds] = inter
 
             sd_genes, mean_genes = ds_stats[ds]

@@ -37,3 +37,6 @@ output/
 
 # Claude
 .claude/
+
+# Benchmark datasets (regenerable, large)
+benchmarks/data/

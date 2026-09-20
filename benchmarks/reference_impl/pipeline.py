@@ -6,14 +6,11 @@ No parallelism (no joblib), no negative control, no eval_struct.
 
 from __future__ import annotations
 
-import re
 import time
 from pathlib import Path
 
 import pandas as pd
 
-from .backends import DatasetStatsCache, as_backend
-from .utils import signature_union_indices
 from .eval_var import compute_var
 from .eval_expr import compute_expr
 from .eval_compactness import compute_compactness
@@ -22,47 +19,25 @@ from .compare_metrics import compute_metrics
 from .radar_chart import compute_radar
 
 
-def _safe_name(name: str) -> str:
-    return re.sub(r"[^A-Za-z0-9._-]+", "_", str(name)) or "dataset"
-
-
 def run_pipeline(
     gene_sigs_list: dict[str, list[str]],
     names_sigs: list[str],
-    mRNA_expr_matrix: dict,
+    mRNA_expr_matrix: dict[str, pd.DataFrame],
     names_datasets: list[str],
     out_dir: str | Path | None = None,
     thresholds: dict[str, float] | list[float] | None = None,
     verbose: bool = False,
-    share_cache: bool = True,
-    stats_cache: str | Path | None = None,
 ) -> dict:
     """Run the sequential radar-metrics pipeline.
 
     Args:
         gene_sigs_list: dict of signature name -> gene list
         names_sigs: ordered list of signature names
-        mRNA_expr_matrix: dict of dataset name -> expression matrix. Each value
-            is a DataFrame (genes x samples), an AnnData (cells x genes; in
-            memory, backed="r" or lazy) or an ExpressionBackend — e.g.
-            SparseBackend(scipy_matrix, gene_names, sample_names). Sparse
-            inputs are never densified as a whole: only signature genes are.
+        mRNA_expr_matrix: dict of dataset name -> DataFrame (genes x samples)
         names_datasets: ordered list of dataset names
         out_dir: if not None, write radarchart_table.txt under this directory
         thresholds: expression thresholds per dataset (dict or list, default: median)
         verbose: if True, print progress
-        share_cache: wrap every dataset in a DatasetStatsCache so that per-gene
-            statistics, the expression threshold and the fetched signature
-            genes are computed once and shared by the five modules (default).
-            Results are unchanged; only repeated work is removed. False runs
-            every module on its own, as the individual compute_* calls do.
-        stats_cache: optional directory. Per-gene statistics depend on the
-            matrix only, so they are saved there as
-            ``<dataset>.gene_stats.npz`` and reused by later runs on the same
-            matrix (any signatures), skipping the scans of the whole matrix.
-            A file is ignored when its fingerprint (shape, dtype, gene names,
-            digest of the first and last vectors) does not match the dataset;
-            delete it if a matrix was modified in place. Implies share_cache.
 
     Returns dict with:
         var_result, expr_result, compact_result, stan_result, metrics_result:
@@ -81,24 +56,6 @@ def run_pipeline(
                 f"number of datasets ({len(names_datasets)})"
             )
         thresholds = dict(zip(names_datasets, thresholds))
-
-    # Resolve every input to a backend once; modules accept backends as is.
-    mRNA_expr_matrix = {ds: as_backend(mRNA_expr_matrix[ds]) for ds in names_datasets}
-    if share_cache or stats_cache is not None:
-        for ds in names_datasets:
-            cache = mRNA_expr_matrix[ds]
-            if not isinstance(cache, DatasetStatsCache):
-                cache = DatasetStatsCache(cache)
-            threshold = None if thresholds is None else thresholds[ds]
-            stats_file = None
-            if stats_cache is not None:
-                stats_file = Path(stats_cache) / f"{_safe_name(ds)}.gene_stats.npz"
-                cache.load_stats(stats_file)
-            seeded = cache.has_stats(threshold)
-            cache.prepare(signature_union_indices(cache, gene_sigs_list, names_sigs), threshold)
-            if stats_file is not None and not seeded:
-                cache.save_stats(stats_file)
-            mRNA_expr_matrix[ds] = cache
 
     if verbose:
         print("[pipeline] compute_var ...")
