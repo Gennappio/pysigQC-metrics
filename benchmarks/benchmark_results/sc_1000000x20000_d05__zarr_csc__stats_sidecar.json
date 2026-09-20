@@ -1,0 +1,34 @@
+{
+ "dataset": "sc_1000000x20000_d05",
+ "backend": "zarr_csc",
+ "tag": "stats_sidecar",
+ "status": "OK",
+ "total_seconds": 17.74891316600042,
+ "peak_rss": 11738202112,
+ "modules": {
+  "var_result": 0.015628832999937003,
+  "expr_result": 0.001151291999121895,
+  "compact_result": 5.001272000001336,
+  "metrics_result": 5.527011083002435,
+  "stan_result": 7.169044958998711
+ },
+ "backend_timings": {
+  "load_genes": 0.48682766699857893,
+  "compactness_extract": 0.7479494170001999,
+  "compactness_rank": 3.4662915839980997,
+  "compactness_corr": 0.7706541660008952,
+  "metrics_extract": 0.43460737600616994,
+  "metrics_scores": 2.1084622490125184,
+  "metrics_pca": 1.3647709149990987,
+  "metrics_spearman": 1.6190622499998426,
+  "stan_extract": 0.2267443729979277,
+  "stan_scores": 6.5029572489947896,
+  "stan_spearman": 0.4392923330015037
+ },
+ "numerical_parity": "PASS",
+ "cells": 1000000,
+ "mode": "prototype",
+ "genes": 20000,
+ "nnz": 987261022,
+ "density": 0.0493630511
+}

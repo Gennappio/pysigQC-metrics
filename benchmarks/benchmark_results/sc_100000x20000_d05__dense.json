@@ -1,0 +1,23 @@
+{
+ "dataset": "sc_100000x20000_d05",
+ "backend": "dense",
+ "impl": "reference",
+ "mode": "modules",
+ "tag": "",
+ "cells": 100000,
+ "genes": 20000,
+ "nnz": 98829741,
+ "density": 0.0494148705,
+ "input_matrix_bytes_dense_f64": 16000000000,
+ "input_matrix_bytes_sparse": 791437936,
+ "storage_bytes": 797013848,
+ "n_signatures": 9,
+ "n_signature_genes_union": 408,
+ "mem_limit_gb": 40.0,
+ "chunk_nnz": 0,
+ "platform": "macOS-26.6.2-arm64-arm-64bit",
+ "python": "3.12.2",
+ "timestamp": "2026-09-18T20:02:39",
+ "predicted_peak_bytes": 58000000000,
+ "status": "OOM_EXPECTED"
+}

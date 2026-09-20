@@ -1,0 +1,35 @@
+{
+ "dataset": "sc_100000x20000_d05",
+ "backend": "h5ad_csc",
+ "tag": "stats_sidecar",
+ "status": "OK",
+ "total_seconds": 1.479365166000207,
+ "peak_rss": 2592948224,
+ "modules": {
+  "var_result": 0.013004792002902832,
+  "expr_result": 0.0010409999958937988,
+  "compact_result": 0.36955350000062026,
+  "metrics_result": 0.4345406249994994,
+  "stan_result": 0.6446415830068872
+ },
+ "backend_timings": {
+  "load_genes": 0.013468667006236501,
+  "cache_prepare": 0.01356849999865517,
+  "compactness_extract": 0.02245666600356344,
+  "compactness_rank": 0.2708391659980407,
+  "compactness_corr": 0.07221612399735022,
+  "metrics_extract": 0.04154987501533469,
+  "metrics_scores": 0.13986366699828068,
+  "metrics_pca": 0.12401658501039492,
+  "metrics_spearman": 0.12903379099589074,
+  "stan_extract": 0.021750707011960912,
+  "stan_scores": 0.5840695829901961,
+  "stan_spearman": 0.03879383498860989
+ },
+ "numerical_parity": "PASS",
+ "cells": 100000,
+ "mode": "prototype",
+ "genes": 20000,
+ "nnz": 98829741,
+ "density": 0.0494148705
+}

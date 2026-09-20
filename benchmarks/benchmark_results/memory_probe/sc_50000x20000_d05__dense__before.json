@@ -1,0 +1,38 @@
+[
+ {
+  "step": "eval_var",
+  "seconds": 5.832604375005758,
+  "rss_after_load": 4654235648,
+  "peak_rss": 21272920064
+ },
+ {
+  "step": "eval_expr",
+  "seconds": 6.663557792002393,
+  "rss_after_load": 4670930944,
+  "peak_rss": 29671505920
+ },
+ {
+  "step": "eval_compactness",
+  "seconds": 0.33798537500115344,
+  "rss_after_load": 4663050240,
+  "peak_rss": 5091295232
+ },
+ {
+  "step": "compare_metrics",
+  "seconds": 0.5051873330012313,
+  "rss_after_load": 4656414720,
+  "peak_rss": 5115576320
+ },
+ {
+  "step": "eval_stan",
+  "seconds": 0.5567783750011586,
+  "rss_after_load": 4658249728,
+  "peak_rss": 5054496768
+ },
+ {
+  "step": "pipeline",
+  "seconds": 12.679283917001158,
+  "rss_after_load": 4666212352,
+  "peak_rss": 29667213312
+ }
+]

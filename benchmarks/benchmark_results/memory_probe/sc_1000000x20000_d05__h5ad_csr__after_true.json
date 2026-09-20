@@ -1,0 +1,10 @@
+[
+ {
+  "step": "pipeline",
+  "seconds": 30.21968016699975,
+  "rss_after_load": 718454784,
+  "peak_rss": 3994353664,
+  "allocated_peak": 3191371718,
+  "malloc_large_cache": false
+ }
+]

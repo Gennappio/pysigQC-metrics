@@ -9,6 +9,9 @@ from .eval_stan import compute_stan
 from .compare_metrics import compute_metrics
 from .radar_chart import compute_radar, ALL_METRICS
 from .pipeline import run_pipeline
+from .backends import (
+    AnnDataBackend, DatasetStatsCache, DenseBackend, ExpressionBackend, PandasBackend, SparseBackend,
+)
 
 __all__ = [
     "compute_var",
@@ -19,4 +22,10 @@ __all__ = [
     "compute_radar",
     "ALL_METRICS",
     "run_pipeline",
+    "ExpressionBackend",
+    "DenseBackend",
+    "PandasBackend",
+    "SparseBackend",
+    "AnnDataBackend",
+    "DatasetStatsCache",
 ]

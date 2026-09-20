@@ -104,6 +104,61 @@ radar = compute_radar(radar_values, list(sigs), list(expr))
   log-transformed before use.
 - Minimum 2 genes per signature, 2 samples per dataset.
 
+## Single-cell / sparse inputs
+
+Besides DataFrames, every dataset in `mRNA_expr_matrix` may be an `AnnData`
+(in memory, `backed="r"`, or lazy) or an `ExpressionBackend`. Sparse inputs
+are never densified as a whole — only the genes of the signatures are — and
+the 14 metrics are numerically identical to the dense path (see
+`tests/test_backends.py`).
+
+```bash
+pip install "pysigqc-metrics[anndata] @ git+ssh://git@github.com/Gennappio/pysigQC-metrics.git@main"
+```
+
+```python
+import anndata as ad
+from pysigqc_metrics import run_pipeline, SparseBackend, AnnDataBackend
+
+# AnnData (cells x genes), out-of-core: only the needed parts are read
+adata = ad.read_h5ad("atlas.h5ad", backed="r")
+result = run_pipeline(sigs, list(sigs), {"atlas": adata}, ["atlas"])
+
+# a specific layer
+backend = AnnDataBackend(adata, layer="lognorm")
+
+# a bare scipy matrix: say which axis holds the genes
+backend = SparseBackend(csr, gene_names, cell_names, gene_axis=1)   # cells x genes
+```
+
+`run_pipeline` shares per-dataset work between the five modules by default
+(`share_cache=True`): per-gene statistics, the expression threshold and the
+signature-gene fetch are computed once — two scans of the matrix instead of
+one or two per module. Results are unchanged.
+
+Per-gene statistics depend on the matrix only, not on the signatures. With
+`stats_cache="some/dir"` they are saved as `<dataset>.gene_stats.npz` (< 1 MB)
+and reused by later runs on the same matrix, which then skip the scans of the
+whole matrix (1M cells: ~30 s -> ~16 s):
+
+```python
+result = run_pipeline(sigs, list(sigs), {"atlas": adata}, ["atlas"],
+                      stats_cache="~/.cache/pysigqc")
+```
+
+The file is validated against a fingerprint of the matrix (shape, dtype, gene
+names, digest of its first and last vectors) and ignored with a warning when
+it does not match. The fingerprint does not read the whole matrix: delete the
+file if you modify a matrix in place while keeping its shape.
+
+Memory: out-of-core inputs need about 4 GB per million cells for signatures
+of up to 100 genes (peak RSS reads higher on macOS, whose allocator keeps
+freed blocks resident); a DataFrame needs about 9 bytes per matrix element.
+
+Storage advice, measured in [`SCALABILITY_REPORT.md`](SCALABILITY_REPORT.md):
+CSC (gene-major) or CSR both work; avoid gzip-compressed H5AD for repeated
+analyses (2–3× slower), prefer uncompressed H5AD or Zarr with zstd/Blosc.
+
 ## CLI — running on TCGA inputs
 
 `scripts/test_metrics.py` is a standalone CLI that runs the full pipeline on a
@@ -135,7 +190,10 @@ pytest tests/
 ```
 
 The test suite includes cross-validation against the original R reference
-outputs (`tests/fixtures/reference_outputs/`).
+outputs (`tests/fixtures/reference_outputs/`) and backend-parity tests that
+compare every sparse / on-disk backend with the dense pipeline.
+
+Scalability benchmarks live in [`benchmarks/`](benchmarks/README.md).
 
 ## License
 

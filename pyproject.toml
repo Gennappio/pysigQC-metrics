@@ -17,9 +17,12 @@ dependencies = [
 
 [project.optional-dependencies]
 plot = ["matplotlib>=3.7"]
+# Single-cell inputs: AnnData in memory, backed H5AD, Zarr, dask-lazy.
+anndata = ["anndata>=0.11", "h5py>=3.8", "zarr>=2.18", "dask>=2024.1", "xarray>=2024.1"]
+bench = ["pysigqc-metrics[anndata,plot]", "psutil>=5.9"]
 all = ["pysigqc-metrics[plot]"]
 dev = [
-    "pysigqc-metrics[all]",
+    "pysigqc-metrics[all,anndata]",
     "pytest>=7.0",
     "pytest-cov>=4.0",
 ]

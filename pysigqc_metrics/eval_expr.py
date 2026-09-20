@@ -11,11 +11,13 @@ import time
 import numpy as np
 import pandas as pd
 
+from .backends import as_backend
+
 
 def compute_expr(
     gene_sigs_list: dict[str, list[str]],
     names_sigs: list[str],
-    mRNA_expr_matrix: dict[str, pd.DataFrame],
+    mRNA_expr_matrix: dict,
     names_datasets: list[str],
     thresholds: dict[str, float] | None = None,
 ) -> dict:
@@ -44,28 +46,25 @@ def compute_expr(
 
     ds_cache: dict = {}
     for ds in names_datasets:
-        df = mRNA_expr_matrix[ds]
-        arr = df.to_numpy(dtype=float)
-        n_samples = arr.shape[1]
-        nan_mask = np.isnan(arr)
-        has_na_full = nan_mask.any(axis=1)
-        na_props_full = nan_mask.sum(axis=1) / n_samples
+        backend = as_backend(mRNA_expr_matrix[ds])
+        n_samples = backend.shape[1]
 
-        # R: median(unlist(na.omit(matrix))) — na.omit drops rows with any NA.
+        # threshold=None -> R: median(unlist(na.omit(matrix))); na.omit drops
+        # rows with any NA. Sparse backends get the exact median by counting
+        # implicit zeros, without densifying.
+        stats = backend.expr_stats(None if compute_thresholds else float(thresholds[ds]))
         if compute_thresholds:
-            clean = arr[~has_na_full]
-            thresh = float(np.median(clean)) if clean.size else float("nan")
-            thresholds[ds] = thresh
-        else:
-            thresh = float(thresholds[ds])
+            thresholds[ds] = stats.threshold
 
-        # NaN comparison is False in numpy; rows with any NaN get NaN propagated
-        # afterwards to match R's rowSums(genes_expr < threshold) semantics.
-        below_count = (arr < thresh).sum(axis=1)
-        expr_props_full = 1.0 - below_count / n_samples
+        has_na_full = stats.nan_counts > 0
+        na_props_full = stats.nan_counts / n_samples
+
+        # Rows with any NaN get NaN propagated to match R's
+        # rowSums(genes_expr < threshold) semantics.
+        expr_props_full = 1.0 - stats.below_counts / n_samples
         expr_props_full = np.where(has_na_full, np.nan, expr_props_full)
 
-        ds_cache[ds] = (df.index, na_props_full, expr_props_full)
+        ds_cache[ds] = (backend.gene_names, na_props_full, expr_props_full)
 
     for sig in names_sigs:
         gene_sig = list(gene_sigs_list[sig])

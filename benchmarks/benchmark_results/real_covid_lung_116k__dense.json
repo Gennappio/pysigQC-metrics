@@ -1,0 +1,23 @@
+{
+ "dataset": "real_covid_lung_116k",
+ "backend": "dense",
+ "impl": "reference",
+ "mode": "modules",
+ "tag": "",
+ "cells": 116313,
+ "genes": 33523,
+ "nnz": 108121969,
+ "density": 0.02772954934320341,
+ "input_matrix_bytes_dense_f64": 31193285592,
+ "input_matrix_bytes_sparse": 865906264,
+ "storage_bytes": 875745208,
+ "n_signatures": 9,
+ "n_signature_genes_union": 270,
+ "mem_limit_gb": 40.0,
+ "chunk_nnz": 0,
+ "platform": "macOS-26.6.2-arm64-arm-64bit",
+ "python": "3.12.2",
+ "timestamp": "2026-09-19T00:44:16",
+ "predicted_peak_bytes": 113075660271,
+ "status": "OOM_EXPECTED"
+}
